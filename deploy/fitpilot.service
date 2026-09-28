@@ -1,0 +1,49 @@
+# ============================================================
+# FitPilot systemd unit（非 Docker 部署用）
+# 用法：
+#   1. 把 fitpilot-backend-1.0.jar 上传到 /opt/fitpilot/
+#   2. cp deploy/fitpilot.service /etc/systemd/system/fitpilot.service
+#   3. 把下面 Environment= 行的 <KEY> 替换成真实 key
+#   4. systemctl daemon-reload && systemctl enable --now fitpilot
+#   5. journalctl -u fitpilot -f    # 看日志
+# ============================================================
+
+[Unit]
+Description=FitPilot AI Fitness Backend (Spring Boot)
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=fitpilot
+WorkingDirectory=/opt/fitpilot
+
+# ─────────── Java 启动参数 ───────────
+Environment="JAVA_OPTS=-Xms256m -Xmx768m"
+ExecStart=/usr/bin/java $JAVA_OPTS -jar /opt/fitpilot/fitpilot-backend.jar --spring.profiles.active=prod
+
+# ─────────── 方舟豆包 API（关键配置）───────────
+# 把下面 REPLACE-ME 改成真实 key（格式 ark-xxxxxx-...）
+Environment="ARK_BASE_URL=https://ark.cn-beijing.volces.com/api/v3"
+Environment="ARK_API_KEY=ark-REPLACE-ME"
+Environment="ARK_CHAT_MODEL=doubao-seed-2-1-pro-260915"
+Environment="ARK_VISION_MODEL=doubao-seed-2-1-pro-260915"
+
+# ─────────── 数据库（生产用 MySQL）───────────
+Environment="DB_HOST=127.0.0.1"
+Environment="DB_PORT=3306"
+Environment="DB_NAME=fitpilot"
+Environment="DB_USER=fitpilot"
+Environment="DB_PASSWORD=ChangeThisPassword"
+
+# ─────────── 其他 ───────────
+Environment="TZ=Asia/Shanghai"
+StandardOutput=append:/var/log/fitpilot/stdout.log
+StandardError=append:/var/log/fitpilot/stderr.log
+
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

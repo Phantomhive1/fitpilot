@@ -1,0 +1,22 @@
+# Java / Maven
+target/
+*.class
+*.log
+*.jar
+
+# 前端
+node_modules/
+dist/
+
+# H2 数据库本地文件
+fitpilot-backend/data/
+
+# 环境变量与 IDE
+.env
+deploy/.env
+.idea/
+*.iml
+.vscode/
+
+# 上传的视频/图片（开发期别提交）
+uploads/

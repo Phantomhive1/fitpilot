@@ -1,0 +1,53 @@
+# ============================================================
+# FitPilot 默认（开发）配置
+# 跑这个 profile = H2 文件库 + 默认模型 ID
+# 生产用：java -jar fitpilot.jar --spring.profiles.active=prod
+# 详见 application-prod.yml 和 README.md
+# ============================================================
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: fitpilot
+  datasource:
+    # 开发期使用本地 H2 文件库（免安装）；生产切换见 application-prod.yml
+    url: jdbc:h2:file:./data/fitpilot;MODE=MySQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        show_sql: false
+  servlet:
+    multipart:
+      # 视频姿势分析：方舟 Files API 单文件上限 ~512MB，这里给到 100MB 够日常使用
+      max-file-size: 100MB
+      max-request-size: 120MB
+
+fitpilot:
+  ark:
+    # 火山方舟（豆包）API，OpenAI Chat Completions 兼容协议
+    base-url: ${ARK_BASE_URL:https://ark.cn-beijing.volces.com/api/v3}
+    # ──────────────────────────────────────────────────────────
+    # 关键：API Key 全部从环境变量读，绝不写死在 yml 里
+    # 配置方式（任选其一）：
+    #   ① IDEA: Run → Edit Configurations → Environment variables 加 ARK_API_KEY=<key>
+    #   ② Bash: export ARK_API_KEY='ark-xxxxxx'
+    #   ③ PowerShell: $env:ARK_API_KEY="ark-xxxxxx"
+    #   ④ 生产: systemd unit 的 Environment= 行 或 docker-compose 的 environment
+    # ──────────────────────────────────────────────────────────
+    api-key: ${ARK_API_KEY:}
+    # 模型 ID 也走环境变量，默认值是当前方舟控制台可用的豆包 Seed 2.1 Pro；
+    # 想换模型只需设置 ARK_CHAT_MODEL / ARK_VISION_MODEL，不需要改代码
+    chat-model: ${ARK_CHAT_MODEL:doubao-seed-2-1-pro-260915}
+    vision-model: ${ARK_VISION_MODEL:doubao-seed-2-1-pro-260915}
+
+logging:
+  level:
+    com.fitpilot: INFO

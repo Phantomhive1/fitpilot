@@ -1,0 +1,72 @@
+# ============================================================
+# docker-compose 一键启动整站（开发联调 / 小流量生产）
+# 用法：
+#   cp deploy/.env.example deploy/.env       # 改 .env 里的 key 和密码
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# 访问：
+#   http://服务器IP/
+# ============================================================
+
+# 说明：本 compose 同时拉起 MySQL、后端、前端三个容器，前端由后端容器内嵌的
+# 简单 nginx 直接对外服务（开发够用；高并发生产请用单独的 nginx + 静态托管）。
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: fitpilot-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      TZ: Asia/Shanghai
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"   # 仅本机访问；如需远程调试可开
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: fitpilot-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # ─────────────── 数据库 ───────────────
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      # ─────────────── 方舟豆包 ───────────────
+      # 这两个是真正关键的配置，从 .env 读
+      ARK_BASE_URL: ${ARK_BASE_URL}
+      ARK_API_KEY: ${ARK_API_KEY}
+      ARK_CHAT_MODEL: ${ARK_CHAT_MODEL}
+      ARK_VISION_MODEL: ${ARK_VISION_MODEL}
+      # ─────────────── Spring ───────────────
+      SPRING_PROFILES_ACTIVE: prod
+      TZ: Asia/Shanghai
+      JAVA_TOOL_OPTIONS: -Xms256m -Xmx768m
+    volumes:
+      - backend_logs:/var/log/fitpilot
+    ports:
+      - "8080:8080"
+
+volumes:
+  mysql_data:
+  backend_logs:

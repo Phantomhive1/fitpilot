@@ -1,0 +1,58 @@
+# ============================================================
+# FitPilot 生产环境配置
+# 用法：java -jar fitpilot.jar --spring.profiles.active=prod
+# 或环境变量：SPRING_PROFILES_ACTIVE=prod
+# ============================================================
+
+server:
+  port: 8080
+  # 压测公网环境的 IP 头需要透传（nginx 反代会丢真实 IP）
+  forward-headers-strategy: native
+
+spring:
+  application:
+    name: fitpilot
+  datasource:
+    url: jdbc:mysql://${DB_HOST:mysql}:${DB_PORT:3306}/${DB_NAME:fitpilot}?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${DB_USER:fitpilot}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 生产环境数据库连接池
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        # 生产环境显示 SQL 太多会拖慢，可关掉
+        show_sql: false
+        format_sql: false
+  servlet:
+    multipart:
+      # 视频姿势分析：方舟 Files API 单文件上限 ~512MB，这里给到 100MB 够日常使用
+      # 如需更大，先压视频（保持 100MB 性价比最高）
+      max-file-size: 100MB
+      max-request-size: 120MB
+
+fitpilot:
+  ark:
+    base-url: ${ARK_BASE_URL:https://ark.cn-beijing.volces.com/api/v3}
+    api-key: ${ARK_API_KEY:}
+    chat-model: ${ARK_CHAT_MODEL:doubao-seed-2-1-pro-260915}
+    vision-model: ${ARK_VISION_MODEL:doubao-seed-2-1-pro-260915}
+
+logging:
+  level:
+    com.fitpilot: INFO
+    org.hibernate.SQL: WARN
+  # 日志写文件，配合 logrotate 防止占满磁盘
+  file:
+    name: /var/log/fitpilot/fitpilot.log
+    max-size: 50MB
+    max-history: 30
