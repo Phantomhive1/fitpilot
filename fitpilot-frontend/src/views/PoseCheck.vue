@@ -53,7 +53,6 @@
             <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
               <polyline points="17 8 12 3 7 8"/>
-              <line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
             <div class="upload-text">{{ file ? '点击或拖拽替换' : '把动作照片或视频拖到这里' }}</div>
             <div class="upload-sub">图片 / mp4 / mov · 视频 100MB 以内 · 建议侧面照/全身入镜</div>
@@ -68,14 +67,19 @@
           <el-input v-model="movement" placeholder="如：深蹲 / 卧推 / 硬拉" />
         </div>
 
-        <button class="analyze-btn" :disabled="loading || !file" @click="analyze">
-          <span v-if="!loading" class="btn-content">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            开始分析
-          </span>
-          <span v-else class="btn-content">
+        <!-- 按钮：禁用条件 + 倒计时冷却 -->
+        <button class="analyze-btn" :disabled="loading || !file || cooldownLeft > 0" @click="analyze">
+          <span v-if="loading" class="btn-content">
             <span class="spinner"></span>
             {{ isVideoFlag ? '视频抽帧分析中（首次上传需几十秒）…' : '视觉模型分析中…' }}
+          </span>
+          <span v-else-if="cooldownLeft > 0" class="btn-content">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            {{ cooldownLeft }} 秒后再分析（防刷接口）
+          </span>
+          <span v-else class="btn-content">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            开始分析
           </span>
         </button>
       </div>
@@ -87,6 +91,10 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
             分析结果
           </h3>
+          <span v-if="result?.cached" class="cache-badge" :title="cacheTitle">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            {{ cacheLabel }}
+          </span>
         </div>
 
         <template v-if="result">
@@ -164,8 +172,9 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import api from '../api'
 
 const file = ref(null)
 const previewUrl = ref('')
@@ -173,6 +182,8 @@ const isVideoFlag = ref(false)
 const movement = ref('')
 const loading = ref(false)
 const result = ref(null)
+const cooldownLeft = ref(0)
+let cooldownTimer = null
 
 const scorePercent = computed(() => Math.min(100, Math.max(0, Number(result.value?.score) || 0)))
 const scoreColor = computed(() => {
@@ -182,6 +193,16 @@ const scoreColor = computed(() => {
 const scoreLabel = computed(() => {
   const s = scorePercent.value
   return s >= 80 ? '动作标准' : s >= 60 ? '需要调整' : '需要重点纠正'
+})
+const cacheLabel = computed(() => {
+  if (!result.value?.cached) return ''
+  return result.value.cacheSource === 'memory' ? '秒级复用' : '复用历史'
+})
+const cacheTitle = computed(() => {
+  if (!result.value?.cached) return ''
+  if (result.value.cacheSource === 'memory') return '同一文件 2 小时内复用内存缓存，未重新计费'
+  return '同一文件 24 小时内复用历史结果，未重新计费' +
+      (result.value.previousAnalyzedAt ? `（${result.value.previousAnalyzedAt}）` : '')
 })
 const ringStyle = computed(() => ({ '--ring-color': scoreColor.value }))
 
@@ -194,20 +215,46 @@ function onChange(uploadFile) {
 
 async function analyze() {
   if (!file.value) { ElMessage.warning('请先上传照片或视频'); return }
+  if (cooldownLeft.value > 0) return   // 冷却中
+
   const fd = new FormData()
   fd.append('file', file.value)
   if (movement.value.trim()) fd.append('movement', movement.value.trim())
+
   loading.value = true
   try {
-    const res = await fetch('/api/vision/analyze', { method: 'POST', body: fd })
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || res.status)
-    result.value = await res.json()
+    const res = await api.post('/vision/analyze', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+    result.value = res.data
+    if (res.data?.cached) {
+      ElMessage.success(cacheLabel.value + '：未重新计费')
+    }
   } catch (e) {
-    ElMessage.error('分析失败：' + e.message)
+    const status = e?.response?.status
+    const msg = e?.response?.data?.message || e?.response?.data?.error || e.message
+    if (status === 429) {
+      ElMessage.warning(msg || '请求太频繁，请稍后再试')
+    } else {
+      ElMessage.error('分析失败：' + msg)
+    }
   } finally {
     loading.value = false
+    // 8 秒冷却：防止连续点击（即使服务端有限流）
+    startCooldown(8)
   }
 }
+
+function startCooldown(seconds) {
+  cooldownLeft.value = seconds
+  clearInterval(cooldownTimer)
+  cooldownTimer = setInterval(() => {
+    cooldownLeft.value--
+    if (cooldownLeft.value <= 0) clearInterval(cooldownTimer)
+  }, 1000)
+}
+
+onUnmounted(() => clearInterval(cooldownTimer))
 </script>
 
 <style scoped>
@@ -304,6 +351,19 @@ async function analyze() {
   background: rgba(251, 146, 60, 0.12);
   border-color: rgba(251, 146, 60, 0.3);
   color: #fb923c;
+}
+
+.cache-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
 }
 
 /* 上传 */

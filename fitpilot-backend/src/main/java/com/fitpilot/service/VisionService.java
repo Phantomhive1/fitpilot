@@ -5,16 +5,30 @@ import com.fitpilot.client.ArkClient;
 import com.fitpilot.config.ArkProperties;
 import com.fitpilot.model.PoseAnalysis;
 import com.fitpilot.repo.PoseAnalysisRepository;
+import com.fitpilot.util.HashUtils;
 import com.fitpilot.util.JsonUtils;
+import com.fitpilot.util.TtlCache;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 上传训练动作照片或视频，调用豆包视觉/多模态模型做姿势纠正分析 */
+/**
+ * 姿势分析服务。
+ *
+ * 三层去重，命中即跳过方舟调用、节省费用：
+ *   1. 内存缓存（TtlCache，TTL 1~4 小时）—— 同进程内最快
+ *   2. 数据库历史（同哈希最近 24 小时内）—— 跨重启/多实例仍能命中
+ *   3. 真正调方舟 → 写库 + 写内存
+ *
+ * 哈希依据：上传文件 SHA-256（字节级去重）。
+ */
 @Service
 public class VisionService {
 
@@ -23,35 +37,76 @@ public class VisionService {
     private final PoseAnalysisRepository poseRepo;
     private final ObjectMapper mapper = new ObjectMapper();
 
+    /** 内存缓存：同一文件短时间内复用结果 */
+    private final TtlCache<String, Map<String, Object>> cache;
+
     public VisionService(ArkClient ark, ArkProperties arkProps, PoseAnalysisRepository poseRepo) {
         this.ark = ark;
         this.arkProps = arkProps;
         this.poseRepo = poseRepo;
+        this.cache = new TtlCache<>(Duration.ofHours(2), "vision");
     }
 
-    public Map<String, Object> analyze(MultipartFile file, String movement) throws IOException {
+    /**
+     * @param dedupKey 用来归类的会话/用户 key（用于限流 + 持久化索引）
+     */
+    public Map<String, Object> analyze(MultipartFile file, String movement, String dedupKey) throws IOException {
+        byte[] bytes = file.getBytes();
+        String contentHash = HashUtils.sha256Hex(bytes);
         String contentType = file.getContentType() != null ? file.getContentType() : "image/jpeg";
         boolean isVideo = contentType.startsWith("video/");
 
-        String actionHint = (movement == null || movement.isBlank())
-                ? "（照片中的动作请自行识别）"
-                : "（动作：" + movement.trim() + "）";
+        // ───── 1) 内存缓存命中 ─────
+        String cacheKey = contentHash + "|" + (isVideo ? "v" : "i") + "|" + (movement == null ? "" : movement.trim());
+        Map<String, Object> hit = cache.get(cacheKey);
+        if (hit != null) {
+            Map<String, Object> r = new LinkedHashMap<>(hit);
+            r.put("cached", true);
+            r.put("cacheSource", "memory");
+            saveRecord(file, movement, contentHash, contentType, bytes.length, r);
+            return r;
+        }
 
+        // ───── 2) 数据库历史命中（最近 24 小时同哈希）─────
+        LocalDateTime since = LocalDateTime.now().minusHours(24);
+        List<PoseAnalysis> history = poseRepo.findByContentHashSince(contentHash, since);
+        if (!history.isEmpty()) {
+            Map<String, Object> r;
+            try {
+                r = mapper.readValue(history.get(0).getFeedbackJson(),
+                        new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
+            } catch (Exception e) {
+                r = null;
+            }
+            if (r != null) {
+                cache.put(cacheKey, r);
+                Map<String, Object> out = new LinkedHashMap<>(r);
+                out.put("cached", true);
+                out.put("cacheSource", "database");
+                out.put("previousAnalyzedAt", history.get(0).getCreatedAt().toString());
+                saveRecord(file, movement, contentHash, contentType, bytes.length, out);
+                return out;
+            }
+        }
+
+        // ───── 3) 真正调方舟 ─────
         Map<String, Object> mediaPart;
         if (isVideo) {
-            // 视频必须先调方舟 Files API 拿到 file_id，再用 video_url 引用，不能 base64 内联
-            String fileId = ark.uploadFile(file.getBytes(),
+            String fileId = ark.uploadFile(bytes,
                     file.getOriginalFilename() != null ? file.getOriginalFilename() : "pose.mp4",
                     contentType);
             mediaPart = Map.of("type", "video_url",
                     "video_url", Map.of("file_id", fileId));
         } else {
-            // 图片直接 base64 内联，最简单
             String dataUrl = "data:" + contentType + ";base64,"
-                    + Base64.getEncoder().encodeToString(file.getBytes());
+                    + Base64.getEncoder().encodeToString(bytes);
             mediaPart = Map.of("type", "image_url",
                     "image_url", Map.of("url", dataUrl));
         }
+
+        String actionHint = (movement == null || movement.isBlank())
+                ? "（照片中的动作请自行识别）"
+                : "（动作：" + movement.trim() + "）";
 
         String prompt = isVideo
                 ? """
@@ -90,11 +145,30 @@ public class VisionService {
             throw new IllegalStateException("解析视觉模型返回失败：" + e.getMessage(), e);
         }
 
-        PoseAnalysis pa = new PoseAnalysis();
-        pa.setImageName(file.getOriginalFilename());
-        pa.setMovement(movement);
-        pa.setFeedbackJson(json);
-        poseRepo.save(pa);
+        result.put("cached", false);
+        result.put("cacheSource", "fresh");
+        cache.put(cacheKey, result);
+        saveRecord(file, movement, contentHash, contentType, bytes.length, result);
         return result;
+    }
+
+    /** 把每次分析记一行（包括缓存命中，便于查日志/审计） */
+    private void saveRecord(MultipartFile file, String movement, String hash, String contentType,
+                            long size, Map<String, Object> result) {
+        try {
+            PoseAnalysis pa = new PoseAnalysis();
+            pa.setImageName(file.getOriginalFilename());
+            pa.setMovement(movement);
+            pa.setContentHash(hash);
+            pa.setMediaType(contentType.startsWith("video/") ? "video" : "image");
+            pa.setFileSize(size);
+            // cached 字段写"此次响应是否复用历史结果"
+            pa.setCached(Boolean.TRUE.equals(result.get("cached")));
+            pa.setFeedbackJson(mapper.writeValueAsString(result));
+            poseRepo.save(pa);
+        } catch (Exception e) {
+            // 记录失败不能影响主流程
+            System.out.println("[VisionService] saveRecord failed: " + e.getMessage());
+        }
     }
 }

@@ -95,7 +95,9 @@ const quickPrompts = [
 
 onMounted(async () => {
   try {
-    const res = await fetch(`/api/chat/history?sessionId=${encodeURIComponent(sessionId)}`)
+    const res = await fetch(`/api/chat/history?sessionId=${encodeURIComponent(sessionId)}`, {
+      headers: { 'X-Fitpilot-Session': sessionId }
+    })
     if (res.ok) messages.value = await res.json()
     scrollDown()
   } catch { /* 忽略 */ }
@@ -128,7 +130,7 @@ async function send() {
   try {
     const res = await fetch('/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Fitpilot-Session': sessionId },
       body: JSON.stringify({ sessionId, message: text })
     })
     if (!res.ok || !res.body) throw new Error(await res.text().catch(() => res.status))
