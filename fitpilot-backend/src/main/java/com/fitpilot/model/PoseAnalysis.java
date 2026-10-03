@@ -42,7 +42,15 @@ public class PoseAnalysis {
 
     private Long fileSize;
 
-    /** 标记是否被去重缓存命中（false 表示真正调过模型） */
+    /** 归属会话（前端 localStorage UUID），历史记录按会话隔离，可空（老数据/无 header 时） */
+    @Column(name = "session_id", length = 80)
+    private String sessionId;
+
+    /** 标记是否被去重缓存命中（false 表示真正调过模型）。
+     *  columnDefinition 带 DEFAULT FALSE：H2/MySQL 对已有数据的表执行
+     *  ALTER TABLE ADD COLUMN ... NOT NULL 时必须提供默认值，否则报
+     *  "NULL not allowed for column" —— 旧记录默认 false（真实调用过模型）语义正确 */
+    @Column(nullable = false, columnDefinition = "BOOLEAN DEFAULT FALSE")
     private boolean cached = false;
 
     @Lob
@@ -63,6 +71,8 @@ public class PoseAnalysis {
     public void setMediaType(String mediaType) { this.mediaType = mediaType; }
     public Long getFileSize() { return fileSize; }
     public void setFileSize(Long fileSize) { this.fileSize = fileSize; }
+    public String getSessionId() { return sessionId; }
+    public void setSessionId(String sessionId) { this.sessionId = sessionId; }
     public boolean isCached() { return cached; }
     public void setCached(boolean cached) { this.cached = cached; }
     public String getFeedbackJson() { return feedbackJson; }

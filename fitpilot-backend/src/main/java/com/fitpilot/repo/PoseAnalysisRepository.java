@@ -13,6 +13,9 @@ public interface PoseAnalysisRepository extends JpaRepository<PoseAnalysis, Long
 
     List<PoseAnalysis> findTop20ByOrderByCreatedAtDesc();
 
+    /** 当前会话的历史记录（倒序，最多 50 条），用于前端「进步轨迹」 */
+    List<PoseAnalysis> findTop50BySessionIdOrderByIdDesc(String sessionId);
+
     /**
      * 按内容哈希查询最近一条分析记录，用于跨重启的持久化去重。
      * 同字节文件 SHA-256 相同，哈希命中即可复用结果。

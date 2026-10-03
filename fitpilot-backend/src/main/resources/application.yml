@@ -47,6 +47,11 @@ fitpilot:
     # 想换模型只需设置 ARK_CHAT_MODEL / ARK_VISION_MODEL，不需要改代码
     chat-model: ${ARK_CHAT_MODEL:doubao-seed-2-1-pro-260915}
     vision-model: ${ARK_VISION_MODEL:doubao-seed-2-1-pro-260915}
+  amap:
+    # 高德开放平台 Key（外卖模式查周边餐厅用），同样从环境变量读。
+    # 申请：https://console.amap.com → 创建应用 → 添加 Key → 服务平台必须选「Web服务」
+    # 个人开发者认证后有每日免费额度，自用够用；未配置时外卖模式会给出明确提示
+    key: ${AMAP_KEY:}
 
 logging:
   level:

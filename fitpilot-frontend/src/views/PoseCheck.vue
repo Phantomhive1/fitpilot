@@ -67,6 +67,28 @@
           <el-input v-model="movement" placeholder="如：深蹲 / 卧推 / 硬拉" />
         </div>
 
+        <!-- 评估尺度 -->
+        <div class="meta-form">
+          <label class="form-label">
+            评估尺度
+            <span class="optional">（小问题不想被反复念叨就选宽松）</span>
+          </label>
+          <div class="scale-group" role="radiogroup">
+            <button
+              v-for="opt in scaleOptions"
+              :key="opt.value"
+              type="button"
+              class="scale-btn"
+              :class="{ active: strictness === opt.value }"
+              @click="strictness = opt.value"
+            >
+              <span class="scale-emoji">{{ opt.emoji }}</span>
+              <span class="scale-name">{{ opt.label }}</span>
+              <span class="scale-desc">{{ opt.desc }}</span>
+            </button>
+          </div>
+        </div>
+
         <!-- 按钮：禁用条件 + 倒计时冷却 -->
         <button class="analyze-btn" :disabled="loading || !file || cooldownLeft > 0" @click="analyze">
           <span v-if="loading" class="btn-content">
@@ -95,6 +117,7 @@
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
             {{ cacheLabel }}
           </span>
+          <span v-if="result" class="scale-badge">{{ scaleUsedLabel }}</span>
         </div>
 
         <template v-if="result">
@@ -168,11 +191,88 @@
         </div>
       </div>
     </div>
+
+    <!-- 历史记录 · 进步轨迹 -->
+    <div class="card history-card">
+      <div class="card-head">
+        <h3 class="card-title">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/></svg>
+          纠正历史 · 进步轨迹
+        </h3>
+        <button class="refresh-btn" @click="fetchHistory" title="刷新历史">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        </button>
+      </div>
+
+      <!-- 统计条 -->
+      <div v-if="history.length" class="hist-stats">
+        <div class="stat">
+          <div class="stat-val">{{ history.length }}</div>
+          <div class="stat-name">累计分析</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val" :style="{ color: trend.color }">{{ trend.text }}</div>
+          <div class="stat-name">进步趋势</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val">{{ latestScore }}</div>
+          <div class="stat-name">最近得分</div>
+        </div>
+        <div class="stat">
+          <div class="stat-val stat-sm">{{ topMovement || '—' }}</div>
+          <div class="stat-name">练得最多</div>
+        </div>
+      </div>
+
+      <!-- 历史列表 -->
+      <div v-if="history.length" class="hist-list">
+        <div v-for="rec in history" :key="rec.id" class="hist-item" :class="{ open: expandedId === rec.id }">
+          <button class="hist-row" @click="toggleExpand(rec.id)">
+            <span class="hist-score" :style="{ color: scoreColorOf(rec.score), borderColor: scoreColorOf(rec.score) }">
+              {{ rec.score ?? '—' }}
+            </span>
+            <span class="hist-main">
+              <span class="hist-movement">{{ rec.movement || '未命名动作' }}</span>
+              <span class="hist-verdict">{{ rec.verdict }}</span>
+            </span>
+            <span class="hist-meta">
+              <span class="hist-tags">
+                <span class="mini-tag">{{ rec.mediaType === 'video' ? '视频' : '图片' }}</span>
+                <span class="mini-tag">{{ strictnessLabelMap[rec.strictness] || '标准' }}</span>
+              </span>
+              <span class="hist-time">{{ formatTime(rec.createdAt) }}</span>
+              <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </button>
+          <div v-if="expandedId === rec.id" class="hist-detail">
+            <div v-if="rec.issues?.length" class="hist-detail-block">
+              <div class="hist-detail-title">问题</div>
+              <div v-for="(it, i) in rec.issues" :key="i" class="hist-detail-line issue">· {{ it }}</div>
+            </div>
+            <div v-if="rec.suggestions?.length" class="hist-detail-block">
+              <div class="hist-detail-title">建议</div>
+              <div v-for="(it, i) in rec.suggestions" :key="i" class="hist-detail-line tip">· {{ it }}</div>
+            </div>
+            <div v-if="rec.safety && rec.safety !== '无明显风险'" class="hist-detail-block">
+              <div class="hist-detail-title warn">安全</div>
+              <div class="hist-detail-line">{{ rec.safety }}</div>
+            </div>
+            <div v-if="!rec.issues?.length && !rec.suggestions?.length" class="hist-detail-line">
+              （该记录无详细反馈，可能是旧版本数据）
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="empty-result small">
+        <p>还没有分析记录，<br/>第一次分析后会出现在这里，方便对比进步</p>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
 
@@ -180,6 +280,12 @@ const file = ref(null)
 const previewUrl = ref('')
 const isVideoFlag = ref(false)
 const movement = ref('')
+const strictness = ref('standard')
+const scaleOptions = [
+  { value: 'lenient', label: '宽松', emoji: '😌', desc: '只挑大问题，小偏差略过' },
+  { value: 'standard', label: '标准', emoji: '🙂', desc: '常规教练标准' },
+  { value: 'strict', label: '严格', emoji: '🧐', desc: '逐项抠细节' }
+]
 const loading = ref(false)
 const result = ref(null)
 const cooldownLeft = ref(0)
@@ -206,6 +312,71 @@ const cacheTitle = computed(() => {
 })
 const ringStyle = computed(() => ({ '--ring-color': scoreColor.value }))
 
+const strictnessLabelMap = { lenient: '宽松', standard: '标准', strict: '严格' }
+const scaleUsedLabel = computed(() =>
+  strictnessLabelMap[result.value?.strictness] || '标准'
+)
+
+/* ===== 历史记录 ===== */
+const history = ref([])
+const expandedId = ref(null)
+
+async function fetchHistory() {
+  try {
+    const res = await api.get('/vision/history')
+    history.value = res.data || []
+  } catch { /* 历史加载失败不打扰用户 */ }
+}
+
+function toggleExpand(id) {
+  expandedId.value = expandedId.value === id ? null : id
+}
+
+function scoreColorOf(s) {
+  const n = Number(s) || 0
+  return n >= 80 ? '#4ade80' : n >= 60 ? '#facc15' : '#f87171'
+}
+
+function formatTime(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// 有分数的记录（趋势只看真实评分）
+const scored = computed(() =>
+  history.value.filter(r => r.score != null && Number(r.score) > 0).map(r => Number(r.score))
+)
+const latestScore = computed(() => scored.value.length ? scored.value[0] : '—')
+
+// 趋势：最近 3 次平均 vs 更早的平均（需至少 4 次有分数的记录才显示对比）
+const trend = computed(() => {
+  const arr = scored.value
+  if (arr.length < 4) return { text: '待积累', color: '#94a3b8' }
+  const recent = arr.slice(0, 3)
+  const earlier = arr.slice(3)
+  const rAvg = recent.reduce((a, b) => a + b, 0) / recent.length
+  const eAvg = earlier.reduce((a, b) => a + b, 0) / earlier.length
+  const diff = Math.round(rAvg - eAvg)
+  if (diff > 0) return { text: `↑ +${diff} 分`, color: '#4ade80' }
+  if (diff < 0) return { text: `↓ ${diff} 分`, color: '#f87171' }
+  return { text: '→ 持平', color: '#facc15' }
+})
+
+// 练得最多的动作
+const topMovement = computed(() => {
+  const counts = {}
+  for (const r of history.value) {
+    const m = (r.movement || '').trim()
+    if (m) counts[m] = (counts[m] || 0) + 1
+  }
+  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1])
+  return entries.length ? entries[0][0] : ''
+})
+
+onMounted(fetchHistory)
+
 function onChange(uploadFile) {
   file.value = uploadFile.raw
   previewUrl.value = URL.createObjectURL(uploadFile.raw)
@@ -220,6 +391,7 @@ async function analyze() {
   const fd = new FormData()
   fd.append('file', file.value)
   if (movement.value.trim()) fd.append('movement', movement.value.trim())
+  fd.append('strictness', strictness.value)
 
   loading.value = true
   try {
@@ -230,6 +402,7 @@ async function analyze() {
     if (res.data?.cached) {
       ElMessage.success(cacheLabel.value + '：未重新计费')
     }
+    fetchHistory()   // 分析成功后刷新历史记录
   } catch (e) {
     const status = e?.response?.status
     const msg = e?.response?.data?.message || e?.response?.data?.error || e.message
@@ -420,6 +593,61 @@ onUnmounted(() => clearInterval(cooldownTimer))
   font-weight: 400;
   color: #6b7895;
   font-size: 12px;
+}
+
+/* 评估尺度三档 */
+.scale-group {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.scale-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.18s ease;
+}
+.scale-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(74, 222, 128, 0.3);
+}
+.scale-btn.active {
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.55);
+  box-shadow: 0 0 0 1px rgba(74, 222, 128, 0.25);
+}
+.scale-emoji { font-size: 15px; line-height: 1; }
+.scale-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+.scale-btn.active .scale-name { color: #4ade80; }
+.scale-desc {
+  font-size: 11px;
+  color: #6b7895;
+  line-height: 1.4;
+}
+
+/* 结果区尺度标记 */
+.scale-badge {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  color: #94a3b8;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+@media (max-width: 600px) {
+  .scale-group { grid-template-columns: 1fr; }
 }
 
 .analyze-btn {
@@ -635,10 +863,162 @@ onUnmounted(() => clearInterval(cooldownTimer))
   padding: 60px 20px;
   color: #6b7895;
 }
+.empty-result.small { padding: 32px 20px; }
 .empty-result p {
   margin: 12px 0 0;
   font-size: 14px;
   line-height: 1.7;
+}
+
+/* ===== 历史记录 ===== */
+.history-card { margin-top: 18px; }
+.refresh-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.refresh-btn:hover { color: #4ade80; border-color: rgba(74, 222, 128, 0.4); }
+
+.hist-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.stat {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 12px;
+  text-align: center;
+}
+.stat-val {
+  font-size: 20px;
+  font-weight: 800;
+  color: #e5eaf3;
+  font-family: ui-monospace, monospace;
+}
+.stat-val.stat-sm { font-size: 15px; }
+.stat-name {
+  font-size: 11px;
+  color: #6b7895;
+  margin-top: 4px;
+}
+
+.hist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hist-item {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+.hist-item.open { border-color: rgba(74, 222, 128, 0.35); }
+.hist-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.hist-score {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 2px solid;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 16px;
+  font-family: ui-monospace, monospace;
+}
+.hist-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.hist-movement {
+  font-size: 14px;
+  font-weight: 700;
+  color: #e5eaf3;
+}
+.hist-verdict {
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hist-meta {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-direction: column;
+  align-items: flex-end;
+}
+.hist-tags { display: flex; gap: 5px; }
+.mini-tag {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+}
+.hist-time {
+  font-size: 11px;
+  color: #6b7895;
+  font-family: ui-monospace, monospace;
+}
+.chev { color: #6b7895; transition: transform 0.2s ease; }
+.hist-item.open .chev { transform: rotate(180deg); }
+
+.hist-detail {
+  padding: 4px 16px 14px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+.hist-detail-block { margin-top: 10px; }
+.hist-detail-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+}
+.hist-detail-title.warn { color: #fb923c; }
+.hist-detail-line {
+  font-size: 13px;
+  color: #cbd5e1;
+  line-height: 1.7;
+  padding-left: 4px;
+}
+.hist-detail-line.issue { color: #f0a5a5; }
+.hist-detail-line.tip { color: #9fdcb4; }
+
+@media (max-width: 720px) {
+  .hist-stats { grid-template-columns: repeat(2, 1fr); }
+  .hist-verdict { display: none; }
+  .hist-meta { display: none; }
 }
 
 @media (max-width: 720px) {

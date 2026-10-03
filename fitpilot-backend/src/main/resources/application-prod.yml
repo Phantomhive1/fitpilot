@@ -46,6 +46,9 @@ fitpilot:
     api-key: ${ARK_API_KEY:}
     chat-model: ${ARK_CHAT_MODEL:doubao-seed-2-1-pro-260915}
     vision-model: ${ARK_VISION_MODEL:doubao-seed-2-1-pro-260915}
+  amap:
+    # 高德 Key（外卖模式），申请方式见 application.yml 注释
+    key: ${AMAP_KEY:}
 
 logging:
   level:
