@@ -5,7 +5,7 @@
       <div class="hero-text">
         <div class="kicker">视觉分析</div>
         <h1 class="hero-title">姿势<span class="grad">纠正</span></h1>
-        <p class="hero-sub">上传动作照片或视频，AI 多模态模型按时间顺序识别姿态问题并给出建议</p>
+        <p class="hero-sub">本地 BlazePose 提取 33 个骨骼关键点，与 AI 多模态联合分析，按时间顺序识别姿态问题并给出建议</p>
       </div>
       <div class="hero-art" aria-hidden="true">
         <svg viewBox="0 0 200 200" fill="none">
@@ -44,7 +44,7 @@
           :auto-upload="false"
           :limit="1"
           :on-change="onChange"
-          :on-remove="() => { file = null; previewUrl = ''; isVideoFlag = false; result = null }"
+          :on-remove="clearAll"
           accept="image/*,video/*"
           list-type="picture"
           class="upload"
@@ -59,8 +59,31 @@
           </div>
         </el-upload>
 
-        <video v-if="isVideoFlag && previewUrl" :src="previewUrl" controls class="preview" />
-        <img v-else-if="previewUrl" :src="previewUrl" class="preview" alt="预览" />
+        <div v-if="previewUrl" class="preview-wrap">
+          <canvas v-if="poseData && showSkeleton" ref="overlayCanvas" class="preview canvas-overlay"></canvas>
+          <video v-else-if="isVideoFlag" :src="previewUrl" controls class="preview" />
+          <img v-else :src="previewUrl" class="preview" alt="预览" />
+          <button v-if="poseData" class="skeleton-toggle" :class="{ on: showSkeleton }"
+                  @click="toggleSkeleton" :title="showSkeleton ? '切换回原图' : '查看骨架'">
+            {{ showSkeleton ? '👁 原图' : '🦴 骨架' }}
+          </button>
+        </div>
+
+        <!-- 本地姿态估计状态 -->
+        <div v-if="extracting" class="pose-status run">
+          <span class="pulse-dot"></span>
+          {{ extractLabel || '本地姿态识别中…' }}
+        </div>
+        <div v-else-if="poseError" class="pose-status warn">⚠️ {{ poseError }}</div>
+        <div v-else-if="poseData" class="pose-status ok">
+          <span class="ok-dot"></span>
+          BlazePose 已提取 {{ poseData.frames.length }} 帧骨骼关键点，将随素材一并提供给 AI
+          <template v-if="poseData.frames.length > 1">
+            <span class="frame-badge">@{{ poseData.frames[frameIdx]?.t }}s</span>
+            <input v-model.number="frameIdx" type="range" class="frame-slider"
+                   :min="0" :max="poseData.frames.length - 1" @input="drawOverlay" />
+          </template>
+        </div>
 
         <div class="meta-form">
           <label class="form-label">动作名称 <span class="optional">（选填，AI 会自动识别）</span></label>
@@ -90,8 +113,12 @@
         </div>
 
         <!-- 按钮：禁用条件 + 倒计时冷却 -->
-        <button class="analyze-btn" :disabled="loading || !file || cooldownLeft > 0" @click="analyze">
-          <span v-if="loading" class="btn-content">
+        <button class="analyze-btn" :disabled="loading || !file || extracting || cooldownLeft > 0" @click="analyze">
+          <span v-if="extracting" class="btn-content">
+            <span class="spinner"></span>
+            本地姿态识别中…
+          </span>
+          <span v-else-if="loading" class="btn-content">
             <span class="spinner"></span>
             {{ isVideoFlag ? '视频抽帧分析中（首次上传需几十秒）…' : '视觉模型分析中…' }}
           </span>
@@ -272,9 +299,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../api'
+import { extractFromImage, extractFromVideo, drawSkeleton, seekTo } from '../utils/poseLandmarker'
 
 const file = ref(null)
 const previewUrl = ref('')
@@ -290,6 +318,15 @@ const loading = ref(false)
 const result = ref(null)
 const cooldownLeft = ref(0)
 let cooldownTimer = null
+
+/* ===== 本地姿态估计（BlazePose）===== */
+const extracting = ref(false)     // 正在提取关键点
+const extractLabel = ref('')      // 提取进度文案
+const poseData = ref(null)        // { el, isVideo, duration, frames:[{t, pts, raw}] }
+const poseError = ref('')         // 提取失败提示（降级为纯视觉分析）
+const showSkeleton = ref(true)    // 预览显示骨架 or 原图
+const frameIdx = ref(0)           // 当前查看的采样帧
+const overlayCanvas = ref(null)
 
 const scorePercent = computed(() => Math.min(100, Math.max(0, Number(result.value?.score) || 0)))
 const scoreColor = computed(() => {
@@ -353,7 +390,7 @@ const latestScore = computed(() => scored.value.length ? scored.value[0] : '—'
 // 趋势：最近 3 次平均 vs 更早的平均（需至少 4 次有分数的记录才显示对比）
 const trend = computed(() => {
   const arr = scored.value
-  if (arr.length < 4) return { text: '待积累', color: '#94a3b8' }
+  if (arr.length < 4) return { text: '待积累', color: 'var(--text-2)' }
   const recent = arr.slice(0, 3)
   const earlier = arr.slice(3)
   const rAvg = recent.reduce((a, b) => a + b, 0) / recent.length
@@ -379,19 +416,99 @@ onMounted(fetchHistory)
 
 function onChange(uploadFile) {
   file.value = uploadFile.raw
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
   previewUrl.value = URL.createObjectURL(uploadFile.raw)
   isVideoFlag.value = (uploadFile.raw?.type || '').startsWith('video/')
   result.value = null
+  runPoseExtract(uploadFile.raw)
+}
+
+function clearAll() {
+  file.value = null
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value)
+  previewUrl.value = ''
+  isVideoFlag.value = false
+  result.value = null
+  poseData.value = null
+  poseError.value = ''
+  frameIdx.value = 0
+}
+
+/* 上传后立刻本地提取关键点（不阻塞浏览，analyze 时会等它完成） */
+async function runPoseExtract(f) {
+  extracting.value = true
+  extractLabel.value = '姿态模型加载中…'
+  poseData.value = null
+  poseError.value = ''
+  frameIdx.value = 0
+  showSkeleton.value = true
+  try {
+    const res = isVideoFlag.value
+      ? await extractFromVideo(f, 8, p => { extractLabel.value = `关键点提取 ${Math.round(p * 100)}%（等间隔抽 8 帧）` })
+      : await extractFromImage(f)
+    if (!res.frames.length) {
+      poseError.value = '未检测到人体，将仅由 AI 视觉分析'
+    } else {
+      poseData.value = res
+      ElMessage.success(`BlazePose 已提取 ${res.frames.length} 帧骨骼关键点`)
+      await nextTick()
+      drawOverlay()
+    }
+  } catch (e) {
+    poseError.value = (e?.message || '姿态识别失败') + '，将仅由 AI 视觉分析'
+  } finally {
+    extracting.value = false
+    extractLabel.value = ''
+  }
+}
+
+/** 在 canvas 上重绘：媒体帧 + 骨架 */
+async function drawOverlay() {
+  const cv = overlayCanvas.value
+  const pd = poseData.value
+  if (!cv || !pd || !pd.frames.length) return
+  const frame = pd.frames[frameIdx.value] || pd.frames[0]
+  const el = pd.el
+  const w = el.videoWidth || el.naturalWidth
+  const h = el.videoHeight || el.naturalHeight
+  if (!w || !h) return
+  const scale = Math.min(1, 1280 / w)
+  cv.width = Math.round(w * scale)
+  cv.height = Math.round(h * scale)
+  const ctx = cv.getContext('2d')
+  if (pd.isVideo) await seekTo(el, frame.t)
+  ctx.drawImage(el, 0, 0, cv.width, cv.height)
+  drawSkeleton(ctx, frame.raw, cv.width, cv.height)
+}
+
+async function toggleSkeleton() {
+  showSkeleton.value = !showSkeleton.value
+  if (showSkeleton.value) {
+    await nextTick()
+    drawOverlay()
+  }
 }
 
 async function analyze() {
   if (!file.value) { ElMessage.warning('请先上传照片或视频'); return }
+  if (extracting.value) { ElMessage.warning('本地姿态识别还在进行，稍等一下'); return }
   if (cooldownLeft.value > 0) return   // 冷却中
 
   const fd = new FormData()
   fd.append('file', file.value)
   if (movement.value.trim()) fd.append('movement', movement.value.trim())
   fd.append('strictness', strictness.value)
+  // 关键点数据随素材一起上传：AI 拿到"图 + 骨骼坐标 + 3D 估算"多重输入
+  if (poseData.value?.frames?.length) {
+    fd.append('landmarks', JSON.stringify({
+      model: 'blazepose-heavy',
+      frames: poseData.value.frames.map(f => ({
+        t: f.t,
+        pts: f.pts,
+        ...(f.world ? { world: f.world } : {})
+      }))
+    }))
+  }
 
   loading.value = true
   try {
@@ -458,7 +575,7 @@ onUnmounted(() => clearInterval(cooldownTimer))
   margin: 0 0 8px;
   font-weight: 800;
   letter-spacing: -0.5px;
-  color: #e5eaf3;
+  color: var(--text-1);
 }
 .grad {
   background: linear-gradient(135deg, #4ade80 0%, #fb923c 100%);
@@ -467,7 +584,7 @@ onUnmounted(() => clearInterval(cooldownTimer))
   color: transparent;
 }
 .hero-sub {
-  color: #94a3b8;
+  color: var(--text-2);
   font-size: 14px;
   margin: 0;
   max-width: 460px;
@@ -485,9 +602,9 @@ onUnmounted(() => clearInterval(cooldownTimer))
 }
 
 .card {
-  background: rgba(15, 22, 38, 0.7);
+  background: var(--bg-panel);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-soft);
   border-radius: 18px;
   padding: 22px 24px;
 }
@@ -504,7 +621,7 @@ onUnmounted(() => clearInterval(cooldownTimer))
   margin: 0;
   font-size: 15px;
   font-weight: 700;
-  color: #e5eaf3;
+  color: var(--text-1);
 }
 .card-title svg { color: #4ade80; }
 
@@ -542,7 +659,7 @@ onUnmounted(() => clearInterval(cooldownTimer))
 /* 上传 */
 .upload { width: 100%; }
 .upload :deep(.el-upload-dragger) {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-raise);
   border: 2px dashed rgba(74, 222, 128, 0.25);
   border-radius: 14px;
   padding: 24px;
@@ -557,26 +674,112 @@ onUnmounted(() => clearInterval(cooldownTimer))
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  color: #94a3b8;
+  color: var(--text-2);
 }
 .upload-hint svg { color: #4ade80; }
 .upload-text {
   font-size: 14px;
   font-weight: 600;
-  color: #cbd5e1;
+  color: var(--text-2);
 }
 .upload-sub {
   font-size: 12px;
-  color: #6b7895;
+  color: var(--text-3);
+}
+.preview-wrap {
+  position: relative;
+  margin-top: 16px;
 }
 .preview {
   display: block;
   max-width: 100%;
   border-radius: 12px;
-  margin-top: 16px;
   max-height: 360px;
   object-fit: contain;
   background: rgba(0,0,0,0.3);
+}
+.canvas-overlay {
+  width: auto;
+  max-height: 360px;
+}
+.skeleton-toggle {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-1);
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition: all 0.15s ease;
+}
+.skeleton-toggle:hover { border-color: rgba(74, 222, 128, 0.5); color: #4ade80; }
+.skeleton-toggle.on {
+  border-color: rgba(74, 222, 128, 0.45);
+  color: #4ade80;
+}
+
+/* 本地姿态估计状态条 */
+.pose-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.pose-status.run {
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: #38bdf8;
+}
+.pose-status.warn {
+  background: rgba(251, 146, 60, 0.08);
+  border: 1px solid rgba(251, 146, 60, 0.3);
+  color: #fb923c;
+}
+.pose-status.ok {
+  background: rgba(74, 222, 128, 0.08);
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  color: #4ade80;
+}
+.pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #38bdf8;
+  animation: pulse 1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+.ok-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4ade80;
+  flex-shrink: 0;
+}
+.frame-badge {
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(74, 222, 128, 0.15);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.frame-slider {
+  width: 140px;
+  accent-color: #4ade80;
 }
 
 .meta-form {
@@ -586,12 +789,12 @@ onUnmounted(() => clearInterval(cooldownTimer))
   display: block;
   font-size: 13px;
   font-weight: 600;
-  color: #cbd5e1;
+  color: var(--text-2);
   margin-bottom: 6px;
 }
 .optional {
   font-weight: 400;
-  color: #6b7895;
+  color: var(--text-3);
   font-size: 12px;
 }
 
@@ -607,15 +810,15 @@ onUnmounted(() => clearInterval(cooldownTimer))
   align-items: flex-start;
   gap: 3px;
   padding: 10px 12px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-raise);
+  border: 1px solid var(--border-strong);
   border-radius: 12px;
   cursor: pointer;
   text-align: left;
   transition: all 0.18s ease;
 }
 .scale-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--border-soft);
   border-color: rgba(74, 222, 128, 0.3);
 }
 .scale-btn.active {
@@ -627,12 +830,12 @@ onUnmounted(() => clearInterval(cooldownTimer))
 .scale-name {
   font-size: 13px;
   font-weight: 700;
-  color: #cbd5e1;
+  color: var(--text-2);
 }
 .scale-btn.active .scale-name { color: #4ade80; }
 .scale-desc {
   font-size: 11px;
-  color: #6b7895;
+  color: var(--text-3);
   line-height: 1.4;
 }
 
@@ -640,7 +843,7 @@ onUnmounted(() => clearInterval(cooldownTimer))
 .scale-badge {
   background: rgba(148, 163, 184, 0.12);
   border: 1px solid rgba(148, 163, 184, 0.3);
-  color: #94a3b8;
+  color: var(--text-2);
   padding: 3px 10px;
   border-radius: 999px;
   font-size: 11px;
@@ -694,7 +897,7 @@ onUnmounted(() => clearInterval(cooldownTimer))
   align-items: center;
   gap: 22px;
   padding: 18px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--bg-raise);
   border-radius: 14px;
   margin-bottom: 18px;
 }
@@ -711,7 +914,7 @@ onUnmounted(() => clearInterval(cooldownTimer))
 }
 .ring-bg {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.06);
+  stroke: var(--border-soft);
   stroke-width: 8;
 }
 .ring-fg {
@@ -732,19 +935,19 @@ onUnmounted(() => clearInterval(cooldownTimer))
   font-size: 36px;
   font-weight: 800;
   line-height: 1;
-  color: #e5eaf3;
+  color: var(--text-1);
   font-family: ui-monospace, monospace;
 }
 .score-unit {
   font-size: 11px;
-  color: #6b7895;
+  color: var(--text-3);
   margin-top: 2px;
 }
 .score-meta { flex: 1; }
 .verdict {
   font-size: 15px;
   font-weight: 600;
-  color: #e5eaf3;
+  color: var(--text-1);
   line-height: 1.5;
 }
 .score-level {
@@ -795,7 +998,7 @@ onUnmounted(() => clearInterval(cooldownTimer))
   border-radius: 10px;
   font-size: 14px;
   line-height: 1.6;
-  color: #dbe4f3;
+  color: var(--text-1);
 }
 .result-item.issues {
   background: rgba(248, 113, 113, 0.06);
@@ -854,14 +1057,14 @@ onUnmounted(() => clearInterval(cooldownTimer))
 }
 .safety-content {
   font-size: 13px;
-  color: #dbe4f3;
+  color: var(--text-1);
   line-height: 1.6;
 }
 
 .empty-result {
   text-align: center;
   padding: 60px 20px;
-  color: #6b7895;
+  color: var(--text-3);
 }
 .empty-result.small { padding: 32px 20px; }
 .empty-result p {
@@ -877,10 +1080,10 @@ onUnmounted(() => clearInterval(cooldownTimer))
   place-items: center;
   width: 28px;
   height: 28px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
   border-radius: 8px;
-  color: #94a3b8;
+  color: var(--text-2);
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -893,8 +1096,8 @@ onUnmounted(() => clearInterval(cooldownTimer))
   margin-bottom: 16px;
 }
 .stat {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg-raise);
+  border: 1px solid var(--bg-input);
   border-radius: 12px;
   padding: 12px;
   text-align: center;
@@ -902,13 +1105,13 @@ onUnmounted(() => clearInterval(cooldownTimer))
 .stat-val {
   font-size: 20px;
   font-weight: 800;
-  color: #e5eaf3;
+  color: var(--text-1);
   font-family: ui-monospace, monospace;
 }
 .stat-val.stat-sm { font-size: 15px; }
 .stat-name {
   font-size: 11px;
-  color: #6b7895;
+  color: var(--text-3);
   margin-top: 4px;
 }
 
@@ -918,8 +1121,8 @@ onUnmounted(() => clearInterval(cooldownTimer))
   gap: 8px;
 }
 .hist-item {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg-raise);
+  border: 1px solid var(--bg-input);
   border-radius: 12px;
   overflow: hidden;
   transition: border-color 0.15s ease;
@@ -958,11 +1161,11 @@ onUnmounted(() => clearInterval(cooldownTimer))
 .hist-movement {
   font-size: 14px;
   font-weight: 700;
-  color: #e5eaf3;
+  color: var(--text-1);
 }
 .hist-verdict {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--text-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -977,9 +1180,9 @@ onUnmounted(() => clearInterval(cooldownTimer))
 }
 .hist-tags { display: flex; gap: 5px; }
 .mini-tag {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #94a3b8;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  color: var(--text-2);
   padding: 1px 7px;
   border-radius: 999px;
   font-size: 10px;
@@ -987,28 +1190,28 @@ onUnmounted(() => clearInterval(cooldownTimer))
 }
 .hist-time {
   font-size: 11px;
-  color: #6b7895;
+  color: var(--text-3);
   font-family: ui-monospace, monospace;
 }
-.chev { color: #6b7895; transition: transform 0.2s ease; }
+.chev { color: var(--text-3); transition: transform 0.2s ease; }
 .hist-item.open .chev { transform: rotate(180deg); }
 
 .hist-detail {
   padding: 4px 16px 14px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--bg-input);
 }
 .hist-detail-block { margin-top: 10px; }
 .hist-detail-title {
   font-size: 12px;
   font-weight: 700;
-  color: #94a3b8;
+  color: var(--text-2);
   margin-bottom: 4px;
   letter-spacing: 1px;
 }
 .hist-detail-title.warn { color: #fb923c; }
 .hist-detail-line {
   font-size: 13px;
-  color: #cbd5e1;
+  color: var(--text-2);
   line-height: 1.7;
   padding-left: 4px;
 }
@@ -1030,17 +1233,17 @@ onUnmounted(() => clearInterval(cooldownTimer))
 
 :deep(.el-textarea__inner),
 :deep(.el-input__wrapper) {
-  background: rgba(255, 255, 255, 0.04) !important;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+  background: var(--bg-input) !important;
+  box-shadow: 0 0 0 1px var(--border-strong) !important;
   border-radius: 10px !important;
 }
 :deep(.el-input__wrapper.is-focus) {
   box-shadow: 0 0 0 1px #4ade80 !important;
 }
 :deep(.el-input__inner) {
-  color: #e5eaf3 !important;
+  color: var(--text-1) !important;
 }
 :deep(.el-input__inner::placeholder) {
-  color: #4b5670 !important;
+  color: var(--text-3) !important;
 }
 </style>

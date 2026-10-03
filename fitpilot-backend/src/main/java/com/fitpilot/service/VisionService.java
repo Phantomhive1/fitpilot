@@ -7,6 +7,7 @@ import com.fitpilot.model.PoseAnalysis;
 import com.fitpilot.repo.PoseAnalysisRepository;
 import com.fitpilot.util.HashUtils;
 import com.fitpilot.util.JsonUtils;
+import com.fitpilot.util.PoseGeometry;
 import com.fitpilot.util.TtlCache;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -50,9 +51,10 @@ public class VisionService {
     /**
      * @param dedupKey 用来归类的会话/用户 key（用于限流 + 持久化索引）
      * @param strictness 评估尺度：lenient（宽松）/ standard（标准）/ strict（严格），空值按 standard
+     * @param landmarks 前端 BlazePose 提取的骨骼关键点 JSON（可空；空 = 纯视觉分析）
      */
     public Map<String, Object> analyze(MultipartFile file, String movement, String dedupKey,
-                                       String strictness) throws IOException {
+                                       String strictness, String landmarks) throws IOException {
         byte[] bytes = file.getBytes();
         String contentHash = HashUtils.sha256Hex(bytes);
         String contentType = file.getContentType() != null ? file.getContentType() : "image/jpeg";
@@ -65,9 +67,15 @@ public class VisionService {
             default -> "standard";
         };
 
-        // ───── 1) 内存缓存命中（key 含严格度：同一文件不同尺度分开缓存）─────
+        // 关键点几何（无效返回 null → 纯视觉分析）；world=true 表示携带 3D worldLandmarks
+        String poseHint = PoseGeometry.describe(landmarks);
+        boolean world = poseHint != null && PoseGeometry.hasWorld(landmarks);
+
+        // ───── 1) 内存缓存命中（key 含严格度：同一文件不同尺度分开缓存；
+        //        "|lm"=带 2D 关键点，"|lm3"=带 3D 关键点——保证新链路不被旧缓存挡住）─────
         String cacheKey = contentHash + "|" + (isVideo ? "v" : "i") + "|"
-                + (movement == null ? "" : movement.trim()) + "|" + level;
+                + (movement == null ? "" : movement.trim()) + "|" + level
+                + (poseHint == null ? "" : (world ? "|lm3" : "|lm"));
         Map<String, Object> hit = cache.get(cacheKey);
         if (hit != null) {
             Map<String, Object> r = new LinkedHashMap<>(hit);
@@ -80,13 +88,13 @@ public class VisionService {
         // ───── 2) 数据库历史命中（最近 24 小时同哈希 + 同严格度）─────
         LocalDateTime since = LocalDateTime.now().minusHours(24);
         List<PoseAnalysis> history = poseRepo.findByContentHashSince(contentHash, since);
-        Map<String, Object> matched = matchHistory(history, level);
+        Map<String, Object> matched = matchHistory(history, level, world);
         if (matched != null) {
             cache.put(cacheKey, matched);
             Map<String, Object> out = new LinkedHashMap<>(matched);
             out.put("cached", true);
             out.put("cacheSource", "database");
-            out.put("previousAnalyzedAt", matchHistoryCreatedAt(history, level));
+            out.put("previousAnalyzedAt", matchHistoryCreatedAt(history, level, world));
             saveRecord(file, movement, contentHash, contentType, bytes.length, out, dedupKey);
             return out;
         }
@@ -152,6 +160,19 @@ public class VisionService {
                   如果照片不清晰或不是训练动作，score 给 0 并在 verdict 中说明。
                   """.formatted(actionHint, scaleHint);
 
+        // 关键点几何数据注入：让模型"看图 + 读数"双重判断
+        if (poseHint != null) {
+            prompt = prompt + """
+
+
+                另附：浏览器端已用 BlazePose 姿态估计模型（MediaPipe）提取骨骼关键点，
+                服务端按解剖学关节角计算出的几何数据如下。
+                %s
+                使用要求：这份客观数据与你的视觉观察互为印证；两者冲突时以画面为准；
+                利用它更精确地量化问题（如膝角、躯干倾角、膝-脚尖偏移），并在 issues 中引用具体数值。
+                """.formatted(poseHint);
+        }
+
         List<Map<String, Object>> content = List.of(
                 Map.of("type", "text", "text", prompt),
                 mediaPart);
@@ -171,6 +192,7 @@ public class VisionService {
         }
 
         result.put("strictness", level);
+        result.put("lm3", world);
         result.put("cached", false);
         result.put("cacheSource", "fresh");
         cache.put(cacheKey, result);
@@ -211,8 +233,8 @@ public class VisionService {
         return out;
     }
 
-    /** 从数据库历史中挑出与当前严格度匹配的最近一条结果（feedback JSON 里有 strictness 字段） */
-    private Map<String, Object> matchHistory(List<PoseAnalysis> history, String level) {
+    /** 从数据库历史中挑出与当前严格度 + 关键点链路（2D/3D）都匹配的最近一条结果 */
+    private Map<String, Object> matchHistory(List<PoseAnalysis> history, String level, boolean world) {
         for (PoseAnalysis pa : history) {
             try {
                 Map<String, Object> r = mapper.readValue(pa.getFeedbackJson(),
@@ -220,7 +242,9 @@ public class VisionService {
                 String recLevel = String.valueOf(r.get("strictness"));
                 // 旧数据没有 strictness 字段 → 视为 standard
                 if ("null".equals(recLevel) || recLevel.isBlank()) recLevel = "standard";
-                if (recLevel.equals(level)) {
+                // 旧数据没有 lm3 字段 → 视为 2D 链路
+                boolean recWorld = Boolean.TRUE.equals(r.get("lm3"));
+                if (recLevel.equals(level) && recWorld == world) {
                     return r;
                 }
             } catch (Exception ignore) {
@@ -230,15 +254,16 @@ public class VisionService {
         return null;
     }
 
-    /** 找到匹配严格度那条记录的时间（用于前端展示"复用于何时"） */
-    private String matchHistoryCreatedAt(List<PoseAnalysis> history, String level) {
+    /** 找到匹配严格度 + 链路那条记录的时间（用于前端展示"复用于何时"） */
+    private String matchHistoryCreatedAt(List<PoseAnalysis> history, String level, boolean world) {
         for (PoseAnalysis pa : history) {
             try {
                 Map<String, Object> r = mapper.readValue(pa.getFeedbackJson(),
                         new com.fasterxml.jackson.core.type.TypeReference<Map<String, Object>>() {});
                 String recLevel = String.valueOf(r.get("strictness"));
                 if ("null".equals(recLevel) || recLevel.isBlank()) recLevel = "standard";
-                if (recLevel.equals(level)) {
+                boolean recWorld = Boolean.TRUE.equals(r.get("lm3"));
+                if (recLevel.equals(level) && recWorld == world) {
                     return pa.getCreatedAt().toString();
                 }
             } catch (Exception ignore) { }

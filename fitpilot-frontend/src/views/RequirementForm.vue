@@ -253,7 +253,7 @@ async function submit() {
   margin: 0 0 12px;
   font-weight: 800;
   letter-spacing: -1px;
-  color: #e5eaf3;
+  color: var(--text-1);
 }
 .grad {
   background: linear-gradient(135deg, #4ade80 0%, #fb923c 100%);
@@ -262,7 +262,7 @@ async function submit() {
   color: transparent;
 }
 .hero-sub {
-  color: #94a3b8;
+  color: var(--text-2);
   font-size: 15px;
   margin: 0;
   max-width: 480px;
@@ -274,15 +274,15 @@ async function submit() {
 
 /* ===== 表单卡片 ===== */
 .form-card {
-  background: rgba(15, 22, 38, 0.7);
+  background: var(--bg-panel);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-soft);
   border-radius: 20px;
   padding: 36px 40px;
 }
 .section {
   padding: 22px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid var(--bg-input);
 }
 .section:first-of-type { padding-top: 8px; }
 .section:last-of-type { border-bottom: none; }
@@ -307,13 +307,13 @@ async function submit() {
 .section-title {
   margin: 0;
   font-size: 16px;
-  color: #e5eaf3;
+  color: var(--text-1);
   font-weight: 700;
 }
 .section-desc {
   margin: 2px 0 0;
   font-size: 12px;
-  color: #6b7895;
+  color: var(--text-3);
 }
 
 /* 目标卡片 */
@@ -323,8 +323,8 @@ async function submit() {
   gap: 12px;
 }
 .goal-card {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-raise);
+  border: 1px solid var(--border-soft);
   border-radius: 14px;
   padding: 18px 16px;
   display: flex;
@@ -333,17 +333,17 @@ async function submit() {
   gap: 10px;
   cursor: pointer;
   transition: all 0.18s ease;
-  color: #94a3b8;
+  color: var(--text-2);
 }
 .goal-card:hover {
   border-color: rgba(74, 222, 128, 0.3);
   transform: translateY(-2px);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-input);
 }
 .goal-card.active {
   background: linear-gradient(135deg, rgba(74,222,128,0.18), rgba(251,146,60,0.12));
   border-color: rgba(74,222,128,0.5);
-  color: #e5eaf3;
+  color: var(--text-1);
   box-shadow: 0 8px 24px rgba(74, 222, 128, 0.18);
 }
 .goal-icon :deep(svg) {
@@ -363,14 +363,14 @@ async function submit() {
   gap: 12px;
 }
 .level-pill {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-raise);
+  border: 1px solid var(--border-soft);
   border-radius: 12px;
   padding: 16px;
   cursor: pointer;
   transition: all 0.18s ease;
   text-align: center;
-  color: #94a3b8;
+  color: var(--text-2);
 }
 .level-pill:hover {
   border-color: rgba(74, 222, 128, 0.3);
@@ -400,12 +400,12 @@ async function submit() {
   gap: 10px;
 }
 .chip {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-raise);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 8px 16px;
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-2);
   cursor: pointer;
   transition: all 0.15s ease;
   display: flex;
@@ -414,7 +414,7 @@ async function submit() {
 }
 .chip:hover {
   border-color: rgba(74, 222, 128, 0.3);
-  color: #e5eaf3;
+  color: var(--text-1);
 }
 .chip.active {
   background: linear-gradient(135deg, rgba(74,222,128,0.2), rgba(34,197,94,0.2));
@@ -433,8 +433,8 @@ async function submit() {
   gap: 18px;
 }
 .rhythm-block {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-raise);
+  border: 1px solid var(--border-soft);
   border-radius: 12px;
   padding: 16px 18px;
   display: flex;
@@ -443,7 +443,7 @@ async function submit() {
 }
 .rhythm-label {
   font-size: 13px;
-  color: #94a3b8;
+  color: var(--text-2);
 }
 
 /* 提交 */
@@ -453,13 +453,13 @@ async function submit() {
   justify-content: space-between;
   padding-top: 28px;
   margin-top: 8px;
-  border-top: 1px solid rgba(255,255,255,0.06);
+  border-top: 1px solid var(--border-soft);
   gap: 18px;
   flex-wrap: wrap;
 }
 .submit-tip {
   font-size: 13px;
-  color: #6b7895;
+  color: var(--text-3);
 }
 .gantt-btn {
   background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
@@ -518,8 +518,8 @@ async function submit() {
 /* 覆盖 Element Plus 主题色 */
 :deep(.el-textarea__inner),
 :deep(.el-input__wrapper) {
-  background: rgba(255, 255, 255, 0.04) !important;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+  background: var(--bg-input) !important;
+  box-shadow: 0 0 0 1px var(--border-strong) !important;
 }
 :deep(.el-textarea__inner:focus),
 :deep(.el-input__wrapper.is-focus) {
@@ -527,10 +527,10 @@ async function submit() {
 }
 :deep(.el-input__inner),
 :deep(.el-textarea__inner) {
-  color: #e5eaf3 !important;
+  color: var(--text-1) !important;
 }
 :deep(.el-input__inner::placeholder),
 :deep(.el-textarea__inner::placeholder) {
-  color: #4b5670 !important;
+  color: var(--text-3) !important;
 }
 </style>

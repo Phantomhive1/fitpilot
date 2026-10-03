@@ -48,6 +48,7 @@ public class VisionController {
     public Map<String, Object> analyze(@RequestParam("file") MultipartFile file,
                                        @RequestParam(value = "movement", required = false) String movement,
                                        @RequestParam(value = "strictness", required = false, defaultValue = "standard") String strictness,
+                                       @RequestParam(value = "landmarks", required = false) String landmarks,
                                        @RequestHeader(value = "X-Fitpilot-Session", required = false) String sessionHeader,
                                        HttpServletRequest request)
             throws IOException {
@@ -67,7 +68,7 @@ public class VisionController {
                     + " 同一张照片走缓存不计入此限制。");
         }
 
-        return visionService.analyze(file, movement, dedupKey, strictness);
+        return visionService.analyze(file, movement, dedupKey, strictness, landmarks);
     }
 
     /** 当前会话的姿势分析历史（进步轨迹），最多 50 条，倒序 */

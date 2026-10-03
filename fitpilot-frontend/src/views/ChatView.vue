@@ -205,7 +205,7 @@ async function send() {
   margin: 0 0 6px;
   font-weight: 800;
   letter-spacing: -0.5px;
-  color: #e5eaf3;
+  color: var(--text-1);
 }
 .grad {
   background: linear-gradient(135deg, #4ade80 0%, #fb923c 100%);
@@ -214,7 +214,7 @@ async function send() {
   color: transparent;
 }
 .hero-sub {
-  color: #94a3b8;
+  color: var(--text-2);
   font-size: 14px;
   margin: 0;
 }
@@ -254,9 +254,9 @@ async function send() {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #94a3b8;
+  background: var(--bg-input);
+  border: 1px solid var(--border-strong);
+  color: var(--text-2);
   padding: 8px 14px;
   border-radius: 999px;
   font-size: 12px;
@@ -274,15 +274,15 @@ async function send() {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
-  background: rgba(15, 22, 38, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-soft);
   border-radius: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 .chat-list::-webkit-scrollbar { width: 6px; }
-.chat-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+.chat-list::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
 
 .empty-art-wrap {
   flex: 1;
@@ -298,12 +298,12 @@ async function send() {
   opacity: 0.7;
 }
 .empty-art-wrap h3 {
-  color: #e5eaf3;
+  color: var(--text-1);
   margin: 16px 0 6px;
   font-size: 18px;
 }
 .empty-art-wrap p {
-  color: #94a3b8;
+  color: var(--text-2);
   font-size: 13px;
   margin: 0;
 }
@@ -333,8 +333,8 @@ async function send() {
   height: 18px;
 }
 .avatar.user {
-  background: rgba(255, 255, 255, 0.06);
-  color: #cbd5e1;
+  background: var(--border-soft);
+  color: var(--text-2);
 }
 .avatar.assistant {
   background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
@@ -362,9 +362,9 @@ async function send() {
   font-weight: 500;
 }
 .msg.assistant .bubble {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  color: #dbe4f3;
+  background: var(--bg-input);
+  border: 1px solid var(--border-soft);
+  color: var(--text-1);
   border-bottom-left-radius: 4px;
 }
 .cursor {
@@ -414,8 +414,8 @@ async function send() {
 }
 
 :deep(.input-wrap .el-input__wrapper) {
-  background: rgba(255, 255, 255, 0.04) !important;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08) !important;
+  background: var(--bg-input) !important;
+  box-shadow: 0 0 0 1px var(--border-strong) !important;
   border-radius: 14px !important;
   padding-right: 56px;
 }
@@ -423,12 +423,12 @@ async function send() {
   box-shadow: 0 0 0 1px #4ade80 !important;
 }
 :deep(.input-wrap .el-input__inner) {
-  color: #e5eaf3 !important;
+  color: var(--text-1) !important;
   height: 50px;
   font-size: 14px;
 }
 :deep(.input-wrap .el-input__inner::placeholder) {
-  color: #4b5670 !important;
+  color: var(--text-3) !important;
 }
 
 @media (max-width: 720px) {

@@ -15,6 +15,11 @@
         </svg>
       </button>
       <div class="mobile-brand">🏋️ FitPilot</div>
+      <button class="topbar-theme" @click="toggleTheme"
+              :title="theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'">
+        <svg v-if="theme === 'dark'" class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <svg v-else class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
     </header>
 
     <!-- 侧栏：桌面常驻 / 移动端抽屉 -->
@@ -39,6 +44,14 @@
           <span class="nav-bar"></span>
         </router-link>
       </nav>
+
+      <!-- 主题切换 -->
+      <button class="theme-toggle" @click="toggleTheme"
+              :title="theme === 'dark' ? '切换到浅色模式' : '切换到深色模式'">
+        <svg v-if="theme === 'dark'" class="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+        <svg v-else class="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <span>{{ theme === 'dark' ? '切换浅色模式' : '切换深色模式' }}</span>
+      </button>
 
       <div class="sidebar-footer">
         <div class="footer-card">
@@ -74,6 +87,15 @@ import { ref, computed } from 'vue'
 const mobileOpen = ref(false)
 const collapsed = ref(false)
 
+// 主题：初始值由 main.js 在挂载前应用，这里读回来保持按钮状态同步
+const theme = ref(localStorage.getItem('fitpilot:theme') || 'dark')
+function toggleTheme() {
+  theme.value = theme.value === 'dark' ? 'light' : 'dark'
+  document.documentElement.dataset.theme = theme.value
+  document.documentElement.classList.toggle('dark', theme.value === 'dark')
+  localStorage.setItem('fitpilot:theme', theme.value)
+}
+
 const navItems = [
   { path: '/requirement', label: '训练需求', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>' },
   { path: '/diet', label: '饮食计划', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>' },
@@ -87,8 +109,8 @@ const navItems = [
 .app-shell {
   display: flex;
   min-height: 100vh;
-  background: #06090f;
-  color: #e5eaf3;
+  background: var(--bg-page);
+  color: var(--text-1);
   position: relative;
   overflow: hidden;
 }
@@ -105,7 +127,7 @@ const navItems = [
   position: absolute;
   border-radius: 50%;
   filter: blur(80px);
-  opacity: 0.35;
+  opacity: var(--orb-opacity);
 }
 .orb-green {
   width: 520px;
@@ -127,8 +149,8 @@ const navItems = [
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 48px 48px;
 }
 @keyframes float {
@@ -146,14 +168,14 @@ const navItems = [
   padding: 0 16px;
   align-items: center;
   gap: 14px;
-  background: rgba(10, 15, 26, 0.85);
+  background: var(--bg-topbar);
   backdrop-filter: blur(12px);
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+  border-bottom: 1px solid var(--border-soft);
 }
 .hamburger {
   background: transparent;
   border: none;
-  color: #e5eaf3;
+  color: var(--text-1);
   cursor: pointer;
   padding: 6px;
   display: flex;
@@ -163,6 +185,16 @@ const navItems = [
   font-weight: 700;
   letter-spacing: 1px;
 }
+.topbar-theme {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  display: flex;
+  color: var(--text-2);
+}
+.topbar-theme:hover { color: var(--text-1); }
 
 /* ===== 侧栏 ===== */
 .sidebar {
@@ -170,9 +202,9 @@ const navItems = [
   z-index: 2;
   width: 240px;
   flex-shrink: 0;
-  background: rgba(10, 15, 26, 0.75);
+  background: var(--bg-sidebar);
   backdrop-filter: blur(20px);
-  border-right: 1px solid rgba(255,255,255,0.06);
+  border-right: 1px solid var(--border-soft);
   padding: 28px 18px 20px;
   display: flex;
   flex-direction: column;
@@ -209,7 +241,7 @@ const navItems = [
 }
 .brand-sub {
   font-size: 11px;
-  color: #6b7895;
+  color: var(--text-3);
   letter-spacing: 1px;
   margin-top: 2px;
 }
@@ -227,18 +259,18 @@ const navItems = [
   gap: 12px;
   padding: 12px 14px;
   border-radius: 10px;
-  color: #94a3b8;
+  color: var(--text-2);
   text-decoration: none;
   font-size: 14px;
   font-weight: 500;
   transition: all 0.18s ease;
 }
 .nav-item:hover {
-  color: #e5eaf3;
-  background: rgba(255,255,255,0.04);
+  color: var(--text-1);
+  background: var(--bg-input);
 }
 .nav-item.active {
-  color: #e5eaf3;
+  color: var(--text-1);
   background: linear-gradient(135deg, rgba(74,222,128,0.12) 0%, rgba(251,146,60,0.08) 100%);
   border: 1px solid rgba(74,222,128,0.2);
 }
@@ -272,19 +304,19 @@ const navItems = [
 }
 .footer-card {
   background: linear-gradient(135deg, rgba(74,222,128,0.08), rgba(251,146,60,0.08));
-  border: 1px solid rgba(255,255,255,0.06);
+  border: 1px solid var(--border-soft);
   border-radius: 12px;
   padding: 14px;
 }
 .footer-title {
   font-size: 11px;
-  color: #6b7895;
+  color: var(--text-3);
   letter-spacing: 1.5px;
   text-transform: uppercase;
 }
 .footer-tech {
   font-size: 14px;
-  color: #e5eaf3;
+  color: var(--text-1);
   margin-top: 6px;
   font-weight: 600;
 }
@@ -294,9 +326,9 @@ const navItems = [
   position: absolute;
   top: 14px;
   right: 14px;
-  background: rgba(255,255,255,0.05);
+  background: var(--bg-input);
   border: none;
-  color: #e5eaf3;
+  color: var(--text-1);
   width: 32px;
   height: 32px;
   border-radius: 8px;
@@ -348,7 +380,7 @@ const navItems = [
     transform: translateX(-100%);
     transition: transform 0.25s ease;
     z-index: 100;
-    background: rgba(10, 15, 26, 0.98);
+    background: var(--bg-sidebar-solid);
   }
   .sidebar.mobile-open {
     transform: translateX(0);
@@ -360,7 +392,7 @@ const navItems = [
     display: block;
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.6);
+    background: var(--mask);
     z-index: 99;
     backdrop-filter: blur(4px);
   }

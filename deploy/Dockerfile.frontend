@@ -14,6 +14,12 @@ RUN npm config set registry https://registry.npmmirror.com
 COPY package*.json ./
 RUN npm ci --no-audit --no-fund
 
+# 恢复 AI 运行资产（模型 + wasm）：models/ 不进 git，从官方源下载
+# 若构建机访问 storage.googleapis.com 不通，先本地跑 npm run prepare:assets
+# 再 docker build（.dockerignore 未排除它们时会被 COPY 进来）
+COPY scripts ./scripts
+RUN npm run prepare:assets
+
 COPY . .
 RUN npm run build
 

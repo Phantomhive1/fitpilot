@@ -20,3 +20,7 @@ deploy/.env
 
 # 上传的视频/图片（开发期别提交）
 uploads/
+
+# AI 模型与 wasm 运行时（可重新下载的二进制大文件，见 scripts/prepare-assets.mjs）
+fitpilot-frontend/public/models/
+fitpilot-frontend/public/mediapipe-wasm/

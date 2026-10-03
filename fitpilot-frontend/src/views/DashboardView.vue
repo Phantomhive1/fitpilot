@@ -16,7 +16,7 @@
             {{ plan.source === 'chat' ? '聊天调整版' : 'AI 初版' }}
           </span>
           <el-select v-if="planList.length > 1" v-model="currentId" class="version-select" @change="switchPlan" size="small">
-            <template #prefix><span style="font-size:11px;color:#94a3b8">版本</span></template>
+            <template #prefix><span style="font-size:11px;color:var(--text-2)">版本</span></template>
             <el-option v-for="p in planList" :key="p.id" :value="p.id"
               :label="`#${p.id} v${p.version}`" />
           </el-select>
@@ -210,7 +210,7 @@ watch(() => route.params.planId, load)
   color: transparent;
 }
 .summary {
-  color: #94a3b8;
+  color: var(--text-2);
   font-size: 14px;
   margin: 0 0 14px;
   max-width: 540px;
@@ -254,9 +254,9 @@ watch(() => route.params.planId, load)
   min-width: 320px;
 }
 .stat-card {
-  background: rgba(15, 22, 38, 0.7);
+  background: var(--bg-panel);
   backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-soft);
   border-radius: 14px;
   padding: 14px 16px;
   text-align: center;
@@ -275,20 +275,20 @@ watch(() => route.params.planId, load)
 .stat-unit {
   font-size: 12px;
   margin-left: 2px;
-  color: #94a3b8;
+  color: var(--text-2);
   font-weight: 500;
 }
 .stat-label {
   font-size: 11px;
-  color: #6b7895;
+  color: var(--text-3);
   margin-top: 4px;
   letter-spacing: 1px;
 }
 
 /* ===== 时间线 ===== */
 .week-timeline {
-  background: rgba(15, 22, 38, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-soft);
   border-radius: 16px;
   padding: 18px;
   margin-bottom: 24px;
@@ -301,24 +301,24 @@ watch(() => route.params.planId, load)
 }
 .day-pill {
   flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-raise);
+  border: 1px solid var(--border-soft);
   border-radius: 12px;
   padding: 10px 16px;
   cursor: pointer;
   transition: all 0.18s ease;
   text-align: left;
-  color: #94a3b8;
+  color: var(--text-2);
   min-width: 110px;
 }
 .day-pill:hover {
   border-color: rgba(74, 222, 128, 0.3);
-  color: #e5eaf3;
+  color: var(--text-1);
 }
 .day-pill.active {
   background: linear-gradient(135deg, rgba(74,222,128,0.18), rgba(251,146,60,0.12));
   border-color: #4ade80;
-  color: #e5eaf3;
+  color: var(--text-1);
   box-shadow: 0 4px 16px rgba(74, 222, 128, 0.25);
 }
 .day-num {
@@ -354,7 +354,7 @@ watch(() => route.params.planId, load)
   margin: 0;
   font-size: 24px;
   font-weight: 700;
-  color: #e5eaf3;
+  color: var(--text-1);
 }
 .day-tag {
   background: rgba(74, 222, 128, 0.12);
@@ -367,7 +367,7 @@ watch(() => route.params.planId, load)
   letter-spacing: 1px;
 }
 .day-stats {
-  color: #94a3b8;
+  color: var(--text-2);
   font-size: 14px;
 }
 .day-stat strong {
@@ -383,8 +383,8 @@ watch(() => route.params.planId, load)
 }
 .exercise-card {
   display: flex;
-  background: rgba(15, 22, 38, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--bg-panel-2);
+  border: 1px solid var(--border-soft);
   border-radius: 16px;
   padding: 18px 22px;
   transition: all 0.2s ease;
@@ -404,7 +404,7 @@ watch(() => route.params.planId, load)
 .exercise-card:hover {
   border-color: rgba(74, 222, 128, 0.2);
   transform: translateX(2px);
-  background: rgba(15, 22, 38, 0.8);
+  background: var(--bg-panel-solid);
 }
 .ex-num {
   font-size: 24px;
@@ -429,13 +429,13 @@ watch(() => route.params.planId, load)
   margin: 0;
   font-size: 17px;
   font-weight: 700;
-  color: #e5eaf3;
+  color: var(--text-1);
 }
 .ex-metrics {
   display: flex;
   align-items: center;
   gap: 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--bg-raise);
   padding: 8px 14px;
   border-radius: 12px;
 }
@@ -452,19 +452,19 @@ watch(() => route.params.planId, load)
 }
 .metric-unit {
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--text-2);
   margin-left: 2px;
   font-weight: 500;
 }
 .metric-label {
   font-size: 11px;
-  color: #6b7895;
+  color: var(--text-3);
   letter-spacing: 1px;
 }
 .metric-divider {
   width: 1px;
   height: 18px;
-  background: rgba(255,255,255,0.08);
+  background: var(--border-strong);
 }
 .ex-notes {
   display: flex;
@@ -474,7 +474,7 @@ watch(() => route.params.planId, load)
   background: rgba(251, 146, 60, 0.06);
   border-left: 2px solid rgba(251, 146, 60, 0.4);
   border-radius: 8px;
-  color: #cbd5e1;
+  color: var(--text-2);
   font-size: 13px;
   line-height: 1.6;
 }
@@ -512,7 +512,7 @@ watch(() => route.params.planId, load)
 }
 .tip-content {
   font-size: 14px;
-  color: #cbd5e1;
+  color: var(--text-2);
   line-height: 1.7;
 }
 .link {
@@ -535,12 +535,12 @@ watch(() => route.params.planId, load)
   opacity: 0.5;
 }
 .empty-state h3 {
-  color: #e5eaf3;
+  color: var(--text-1);
   margin: 16px 0 8px;
   font-size: 22px;
 }
 .empty-state p {
-  color: #94a3b8;
+  color: var(--text-2);
   margin: 0 0 24px;
 }
 
@@ -573,11 +573,11 @@ watch(() => route.params.planId, load)
 }
 
 :deep(.el-select) {
-  background: rgba(255,255,255,0.04);
+  background: var(--bg-input);
   border-radius: 8px;
 }
 :deep(.el-select .el-input__wrapper) {
   background: transparent !important;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.08) !important;
+  box-shadow: 0 0 0 1px var(--border-strong) !important;
 }
 </style>
